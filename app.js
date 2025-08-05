@@ -1,126 +1,149 @@
 // Inicializar IndexedDB
 let db;
-const request = indexedDB.open("MiBaseDeDatos", 1);
+const request = indexedDB.open('MercadoDB', 1);
 
 request.onerror = (event) => {
-  console.log("Error al abrir la base de datos", event);
-};
-
-request.onsuccess = (event) => {
-  db = event.target.result;
-  mostrarDatos();
+  console.log('Error al abrir la base de datos', event);
 };
 
 request.onupgradeneeded = (event) => {
   db = event.target.result;
-  const objectStore = db.createObjectStore("personas", { keyPath: "id", autoIncrement: true });
-  objectStore.createIndex("name", "name", { unique: false });
-  objectStore.createIndex("apellido", "apellido", { unique: false });
-  objectStore.createIndex("ciudad", "ciudad", { unique: false });
-
-
+  const objectStore = db.createObjectStore('productos', { keyPath: 'id', autoIncrement: true });
+  objectStore.createIndex('purchased', 'purchased', { unique: false });
 };
 
-// Función para insertar o actualizar un dato
-document.getElementById("dataForm").addEventListener("submit", (event) => {
+request.onsuccess = (event) => {
+  db = event.target.result;
+  mostrarProductos();
+  actualizarPresupuestoRestante();
+};
+
+// Gestión de presupuesto
+function obtenerPresupuesto() {
+  return Number(localStorage.getItem('budget')) || 0;
+}
+
+function guardarPresupuesto() {
+  const presupuesto = Number(document.getElementById('budgetInput').value) || 0;
+  localStorage.setItem('budget', presupuesto);
+  actualizarPresupuestoRestante();
+}
+
+document.getElementById('saveBudget').addEventListener('click', guardarPresupuesto);
+document.getElementById('budgetInput').value = obtenerPresupuesto();
+
+// Agregar productos
+const form = document.getElementById('productForm');
+form.addEventListener('submit', (event) => {
   event.preventDefault();
-  const id = document.getElementById("id").value;
-  const name = document.getElementById("name").value;
-  const apellido = document.getElementById("apellido").value;
-  const ciudad = document.getElementById("ciudad").value;
+  const name = document.getElementById('productName').value;
+  const brand = document.getElementById('productBrand').value;
+  const quantity = Number(document.getElementById('productQty').value);
+  const unitPrice = Number(document.getElementById('productPrice').value);
+  const subtotal = quantity * unitPrice;
 
-  const transaction = db.transaction(["personas"], "readwrite");
-  const objectStore = transaction.objectStore("personas");
-
-  if (id) {
-    // Actualizar
-    const request = objectStore.put({ id: Number(id), name,apellido,ciudad});
-    request.onsuccess = () => {
-      console.log("Datos actualizados");
-      limpiarFormulario();
-      mostrarDatos();
-    };
-  } else {
-    // Insertar
-    const request = objectStore.add({ name,apellido,ciudad });
-    request.onsuccess = () => {
-      console.log("Datos guardados");
-      limpiarFormulario();
-      mostrarDatos();
-    };
-  }
+  const transaction = db.transaction(['productos'], 'readwrite');
+  const store = transaction.objectStore('productos');
+  const request = store.add({ name, brand, quantity, unitPrice, subtotal, purchased: false });
+  request.onsuccess = () => {
+    form.reset();
+    mostrarProductos();
+  };
 });
 
-// Mostrar los datos en la tabla
-function mostrarDatos() {
-  const dataList = document.getElementById("dataList");
-  dataList.innerHTML = ''; // Limpiar la tabla
-  const transaction = db.transaction(["personas"], "readonly");
-  const objectStore = transaction.objectStore("personas");
-
-  objectStore.openCursor().onsuccess = (event) => {
+// Mostrar productos
+function mostrarProductos() {
+  const list = document.getElementById('productList');
+  list.innerHTML = '';
+  const transaction = db.transaction(['productos'], 'readonly');
+  const store = transaction.objectStore('productos');
+  store.openCursor().onsuccess = (event) => {
     const cursor = event.target.result;
     if (cursor) {
-      const row = document.createElement("tr");
-      row.innerHTML = `
-        <td>${cursor.value.id}</td>
-        <td>${cursor.value.name}</td>
-        <td>${cursor.value.apellido}</td>
-        <td>${cursor.value.ciudad}</td>
-        <td>
-          <button onclick="editarDato(${cursor.value.id})">Editar</button>
-          <button onclick="eliminarDato(${cursor.value.id})">Eliminar</button>
-        </td>
+      const prod = cursor.value;
+      const card = document.createElement('div');
+      card.className = 'bg-white p-4 rounded shadow flex items-start justify-between';
+      const textClass = prod.purchased ? 'line-through text-gray-400' : '';
+      card.innerHTML = `
+        <div class="${textClass}">
+          <h3 class="font-bold">${prod.name}</h3>
+          <p>Marca: ${prod.brand}</p>
+          <p>Cant: ${prod.quantity} - $${prod.unitPrice}</p>
+          <p>Subtotal: $${prod.subtotal.toFixed(2)}</p>
+        </div>
+        <input type="checkbox" class="h-6 w-6 mt-2" data-id="${prod.id}" ${prod.purchased ? 'checked' : ''} />
       `;
-      dataList.appendChild(row);
+      list.appendChild(card);
       cursor.continue();
     }
   };
 }
 
-// Función para editar un dato
-function editarDato(id) {
-  const transaction = db.transaction(["personas"], "readonly");
-  const objectStore = transaction.objectStore("personas");
-  const request = objectStore.get(id);
-
-  request.onsuccess = () => {
-    const data = request.result;
-    document.getElementById("id").value = data.id;
-    document.getElementById("name").value = data.name;
-    document.getElementById("apellido").value = data.apellido;
-    document.getElementById("ciudad").value = data.ciudad;
-  };
-}
-
-// Función para eliminar un dato
-function eliminarDato(id) {
-  const transaction = db.transaction(["personas"], "readwrite");
-  const objectStore = transaction.objectStore("personas");
-  const request = objectStore.delete(id);
-
-  request.onsuccess = () => {
-    console.log("Datos eliminados");
-    mostrarDatos();
-  };
-}
-
-// Limpiar el formulario
-function limpiarFormulario() {
-  document.getElementById("id").value = '';
-  document.getElementById("name").value = '';
-  document.getElementById("apellido").value = '';
-  document.getElementById("ciudad").value = '';
-}
-
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('service-worker.js')
-        .then((registration) => {
-          console.log('Service Worker registrado:', registration);
-        })
-        .catch((error) => {
-          console.log('Error al registrar el Service Worker:', error);
-        });
-    });
+// Actualizar estado de compra
+const productList = document.getElementById('productList');
+productList.addEventListener('change', (event) => {
+  if (event.target.matches('input[type="checkbox"]')) {
+    const id = Number(event.target.dataset.id);
+    const purchased = event.target.checked;
+    const transaction = db.transaction(['productos'], 'readwrite');
+    const store = transaction.objectStore('productos');
+    const request = store.get(id);
+    request.onsuccess = () => {
+      const data = request.result;
+      data.purchased = purchased;
+      store.put(data).onsuccess = () => {
+        mostrarProductos();
+        actualizarPresupuestoRestante();
+      };
+    };
   }
+});
+
+// Presupuesto restante
+function actualizarPresupuestoRestante() {
+  const presupuesto = obtenerPresupuesto();
+  const transaction = db.transaction(['productos'], 'readonly');
+  const store = transaction.objectStore('productos');
+  let gastado = 0;
+  store.openCursor().onsuccess = (event) => {
+    const cursor = event.target.result;
+    if (cursor) {
+      if (cursor.value.purchased) {
+        gastado += cursor.value.subtotal;
+      }
+      cursor.continue();
+    } else {
+      const restante = presupuesto - gastado;
+      document.getElementById('remaining').textContent = restante.toFixed(2);
+    }
+  };
+}
+
+// Menú lateral
+const menuBtn = document.getElementById('menuBtn');
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('overlay');
+menuBtn.addEventListener('click', () => {
+  sidebar.classList.toggle('-translate-x-full');
+  overlay.classList.toggle('hidden');
+  document.body.classList.toggle('menu-open');
+});
+overlay.addEventListener('click', () => {
+  sidebar.classList.add('-translate-x-full');
+  overlay.classList.add('hidden');
+  document.body.classList.remove('menu-open');
+});
+
+// Registro de Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('service-worker.js')
+      .then((registration) => {
+        console.log('Service Worker registrado:', registration);
+      })
+      .catch((error) => {
+        console.log('Error al registrar el Service Worker:', error);
+      });
+  });
+}
